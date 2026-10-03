@@ -1,6 +1,6 @@
 # ============================================================
 # SAFE ROAD AI
-# Traffic Accident Risk Prediction using Machine Learning
+# Traffic Accident Risk Prediction using Regression
 # Streamlit Application
 # ============================================================
 
@@ -10,12 +10,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix
-)
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -27,6 +24,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
 
 # ============================================================
 # CUSTOM CSS
@@ -102,11 +100,6 @@ st.markdown("""
     margin-top: 20px;
 }
 
-.small-text {
-    color: #64748b;
-    font-size: 14px;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -155,9 +148,9 @@ def generate_data(n=5000):
         p=[0.70, 0.30]
     )
 
-    # -----------------------------
-    # Risk Score
-    # -----------------------------
+    # --------------------------------------------------------
+    # ACCIDENT RISK SCORE
+    # --------------------------------------------------------
 
     risk_score = np.zeros(n)
 
@@ -189,11 +182,8 @@ def generate_data(n=5000):
 
     risk_score += np.random.normal(0, 1.2, n)
 
-    risk_level = pd.cut(
-        risk_score,
-        bins=[-np.inf, 4, 8, np.inf],
-        labels=["Low", "Medium", "High"]
-    )
+    # Keep score positive
+    risk_score = np.clip(risk_score, 0, None)
 
     df = pd.DataFrame({
         "Traffic_Volume": traffic_volume,
@@ -205,7 +195,7 @@ def generate_data(n=5000):
         "Road_Condition": road_condition,
         "Junction": junction,
         "Weekend": weekend,
-        "Risk_Level": risk_level
+        "Risk_Score": risk_score
     })
 
     return df
@@ -220,8 +210,8 @@ def train_model():
 
     df = generate_data()
 
-    X = df.drop("Risk_Level", axis=1)
-    y = df["Risk_Level"]
+    X = df.drop("Risk_Score", axis=1)
+    y = df["Risk_Score"]
 
     X = pd.get_dummies(X, drop_first=True)
 
@@ -229,22 +219,22 @@ def train_model():
         X,
         y,
         test_size=0.20,
-        random_state=42,
-        stratify=y
+        random_state=42
     )
 
-    model = RandomForestClassifier(
+    model = RandomForestRegressor(
         n_estimators=200,
         max_depth=12,
-        random_state=42,
-        class_weight="balanced"
+        random_state=42
     )
 
     model.fit(X_train, y_train)
 
     y_pred = model.predict(X_test)
 
-    accuracy = accuracy_score(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
     importance = pd.DataFrame({
         "Feature": X.columns,
@@ -254,21 +244,16 @@ def train_model():
         ascending=False
     )
 
-    cm = confusion_matrix(
-        y_test,
-        y_pred,
-        labels=["Low", "Medium", "High"]
-    )
-
     return (
         df,
         model,
         X,
         y_test,
         y_pred,
-        accuracy,
-        importance,
-        cm
+        mae,
+        mse,
+        r2,
+        importance
     )
 
 
@@ -282,9 +267,10 @@ def train_model():
     X,
     y_test,
     y_pred,
-    accuracy,
-    importance,
-    cm
+    mae,
+    mse,
+    r2,
+    importance
 ) = train_model()
 
 
@@ -296,9 +282,7 @@ with st.sidebar:
 
     st.markdown("## 🚦 Traffic Safety")
 
-    st.markdown(
-        "### Traffic Safety Intelligence"
-    )
+    st.markdown("### Traffic Safety Intelligence")
 
     st.divider()
 
@@ -308,7 +292,6 @@ with st.sidebar:
             "🏠 Dashboard",
             "🔮 Risk Prediction",
             "📊 Model Analytics",
-            "🧠 Data Thinking",
             "🚀 Future Scope"
         ]
     )
@@ -319,7 +302,7 @@ with st.sidebar:
         """
         **Machine Learning**
 
-        Random Forest Classifier
+        Random Forest Regression
 
         **Dataset**
 
@@ -327,8 +310,7 @@ with st.sidebar:
 
         **Purpose**
 
-        Early-warning traffic safety
-        decision support.
+        Predict continuous traffic accident risk score.
         """
     )
 
@@ -344,7 +326,7 @@ st.markdown("""
 
 <p>
 Traffic Accident Risk Prediction using
-Data Thinking & Machine Learning
+Machine Learning Regression
 </p>
 
 </div>
@@ -372,8 +354,8 @@ if page == "🏠 Dashboard":
 
     with col2:
         st.metric(
-            "Model Accuracy",
-            f"{accuracy * 100:.1f}%"
+            "R² Score",
+            f"{r2:.2f}"
         )
 
     with col3:
@@ -384,8 +366,8 @@ if page == "🏠 Dashboard":
 
     with col4:
         st.metric(
-            "Risk Classes",
-            "3"
+            "Model Type",
+            "Regression"
         )
 
     st.divider()
@@ -394,20 +376,18 @@ if page == "🏠 Dashboard":
 
     with col1:
 
-        st.subheader("Risk Distribution")
-
-        risk_counts = df["Risk_Level"].value_counts()
+        st.subheader("Risk Score Distribution")
 
         fig, ax = plt.subplots(figsize=(7, 4))
 
-        ax.bar(
-            risk_counts.index,
-            risk_counts.values
+        ax.hist(
+            df["Risk_Score"],
+            bins=20
         )
 
-        ax.set_xlabel("Risk Level")
+        ax.set_xlabel("Risk Score")
         ax.set_ylabel("Number of Records")
-        ax.set_title("Traffic Risk Distribution")
+        ax.set_title("Traffic Risk Score Distribution")
 
         st.pyplot(fig)
 
@@ -437,12 +417,11 @@ if page == "🏠 Dashboard":
 
     st.info(
         """
-        SafeRoad AI is designed as an early-warning decision-support
-        system. It identifies traffic conditions associated with higher
-        accident risk so that preventive measures can be considered.
+        SafeRoad AI predicts a continuous traffic accident
+        risk score from traffic and environmental conditions.
 
-        Possible interventions include traffic monitoring, road-safety
-        awareness, emergency preparedness and infrastructure review.
+        The prediction can support traffic monitoring,
+        safety planning and preventive action.
         """
     )
 
@@ -549,7 +528,7 @@ elif page == "🔮 Risk Prediction":
     st.divider()
 
     predict_button = st.button(
-        "🚦 Predict Accident Risk",
+        "🚦 Predict Accident Risk Score",
         use_container_width=True,
         type="primary"
     )
@@ -582,47 +561,45 @@ elif page == "🔮 Risk Prediction":
             input_encoded
         )[0]
 
-        probabilities = model.predict_proba(
-            input_encoded
-        )[0]
-
-        probability_dict = dict(
-            zip(
-                model.classes_,
-                probabilities
-            )
-        )
-
         st.divider()
 
-        # -----------------------------
+        # ----------------------------------------------------
         # RISK RESULT
-        # -----------------------------
+        # ----------------------------------------------------
 
-        if prediction == "High":
+        st.subheader("Predicted Risk Score")
+
+        st.metric(
+            "Accident Risk Score",
+            f"{prediction:.2f}"
+        )
+
+        # Simple interpretation
+
+        if prediction >= 8:
 
             st.markdown(
                 """
                 <div class="risk-high">
-                <h2>🔴 HIGH RISK</h2>
+                <h2>🔴 HIGH RISK SCORE</h2>
                 <p>
-                The current conditions are associated with
-                a higher predicted traffic accident risk.
+                The predicted score indicates relatively
+                high traffic accident risk.
                 </p>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
 
-        elif prediction == "Medium":
+        elif prediction >= 4:
 
             st.markdown(
                 """
                 <div class="risk-medium">
-                <h2>🟡 MEDIUM RISK</h2>
+                <h2>🟡 MEDIUM RISK SCORE</h2>
                 <p>
-                The current conditions show a moderate
-                predicted traffic accident risk.
+                The predicted score indicates moderate
+                traffic accident risk.
                 </p>
                 </div>
                 """,
@@ -634,36 +611,14 @@ elif page == "🔮 Risk Prediction":
             st.markdown(
                 """
                 <div class="risk-low">
-                <h2>🟢 LOW RISK</h2>
+                <h2>🟢 LOW RISK SCORE</h2>
                 <p>
-                The current conditions show a lower
-                predicted traffic accident risk.
+                The predicted score indicates relatively
+                lower traffic accident risk.
                 </p>
                 </div>
                 """,
                 unsafe_allow_html=True
-            )
-
-        st.subheader("Risk Probability")
-
-        p1, p2, p3 = st.columns(3)
-
-        with p1:
-            st.metric(
-                "Low",
-                f"{probability_dict.get('Low', 0) * 100:.1f}%"
-            )
-
-        with p2:
-            st.metric(
-                "Medium",
-                f"{probability_dict.get('Medium', 0) * 100:.1f}%"
-            )
-
-        with p3:
-            st.metric(
-                "High",
-                f"{probability_dict.get('High', 0) * 100:.1f}%"
             )
 
         st.subheader("Entered Conditions")
@@ -680,6 +635,7 @@ elif page == "🔮 Risk Prediction":
                 "Junction",
                 "Weekend"
             ],
+
             "Value": [
                 f"{traffic_volume} vehicles/hour",
                 f"{average_speed} km/h",
@@ -712,79 +668,52 @@ elif page == "🔮 Risk Prediction":
 elif page == "📊 Model Analytics":
 
     st.markdown(
-        '<div class="section-title">📊 Machine Learning Analytics</div>',
+        '<div class="section-title">📊 Regression Model Analytics</div>',
         unsafe_allow_html=True
     )
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
+
         st.metric(
-            "Accuracy",
-            f"{accuracy * 100:.2f}%"
+            "MAE",
+            f"{mae:.3f}"
         )
 
     with col2:
+
         st.metric(
-            "Training Records",
-            "4,000"
+            "MSE",
+            f"{mse:.3f}"
         )
 
     with col3:
+
         st.metric(
-            "Testing Records",
-            "1,000"
+            "R² Score",
+            f"{r2:.3f}"
         )
 
     st.divider()
 
-    st.subheader("Classification Report")
+    st.subheader("Actual vs Predicted Risk Score")
 
-    report = classification_report(
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    ax.scatter(
         y_test,
         y_pred,
-        output_dict=True
+        alpha=0.5
     )
 
-    report_df = pd.DataFrame(report).transpose()
-
-    st.dataframe(
-        report_df.round(3),
-        use_container_width=True
-    )
-
-    st.subheader("Confusion Matrix")
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-
-    ax.imshow(cm)
-
-    ax.set_xticks(
-        range(3),
-        ["Low", "Medium", "High"]
-    )
-
-    ax.set_yticks(
-        range(3),
-        ["Low", "Medium", "High"]
-    )
-
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("Actual")
-
-    ax.set_title("Traffic Risk Confusion Matrix")
-
-    for i in range(3):
-        for j in range(3):
-            ax.text(
-                j,
-                i,
-                cm[i, j],
-                ha="center",
-                va="center"
-            )
+    ax.set_xlabel("Actual Risk Score")
+    ax.set_ylabel("Predicted Risk Score")
+    ax.set_title("Actual vs Predicted")
 
     st.pyplot(fig)
+
+    st.divider()
 
     st.subheader("Feature Importance")
 
@@ -793,83 +722,6 @@ elif page == "📊 Model Analytics":
         use_container_width=True,
         hide_index=True
     )
-
-
-# ============================================================
-# DATA THINKING
-# ============================================================
-
-elif page == "🧠 Data Thinking":
-
-    st.markdown(
-        '<div class="section-title">🧠 Data Thinking Framework</div>',
-        unsafe_allow_html=True
-    )
-
-    stages = [
-        (
-            "01",
-            "Empathy",
-            "Understand drivers, pedestrians, commuters, traffic police and emergency services."
-        ),
-        (
-            "02",
-            "Define",
-            "Identify traffic and environmental conditions associated with accident risk."
-        ),
-        (
-            "03",
-            "Ideate",
-            "Design an early-warning system that can support preventive traffic-safety decisions."
-        ),
-        (
-            "04",
-            "Data",
-            "Collect traffic volume, speed, weather, visibility and road-condition information."
-        ),
-        (
-            "05",
-            "Prepare",
-            "Clean data, encode categorical variables and prepare the ML features."
-        ),
-        (
-            "06",
-            "Model",
-            "Train a Random Forest classification model."
-        ),
-        (
-            "07",
-            "Test",
-            "Evaluate accuracy, precision, recall, F1-score and confusion matrix."
-        ),
-        (
-            "08",
-            "Predict",
-            "Classify conditions into Low, Medium or High predicted risk."
-        ),
-        (
-            "09",
-            "Impact",
-            "Use the risk signal to support preventive planning and safety interventions."
-        )
-    ]
-
-    for number, title, description in stages:
-
-        st.markdown(
-            f"""
-            <div class="metric-card">
-
-            <h3>{number} — {title}</h3>
-
-            <p>{description}</p>
-
-            </div>
-
-            <br>
-            """,
-            unsafe_allow_html=True
-        )
 
 
 # ============================================================
@@ -892,11 +744,11 @@ elif page == "🚀 Future Scope":
         "🤖 More advanced ML models",
         "📊 Historical accident pattern analysis",
         "🏙️ Smart-city traffic management",
-        "🔍 Explainable AI for prediction reasoning",
-        "⚖️ Fairness and model monitoring"
+        "🔍 Explainable AI for prediction reasoning"
     ]
 
     for item in future:
+
         st.markdown(
             f"### {item}"
         )
@@ -907,10 +759,12 @@ elif page == "🚀 Future Scope":
 
     st.warning(
         """
-        This prototype uses synthetic data and demonstrates the
-        machine-learning workflow. A real deployment would require
-        validated historical traffic and accident data, privacy
-        safeguards, model monitoring and human oversight.
+        This prototype uses synthetic data and demonstrates
+        a machine-learning regression workflow.
+
+        A real deployment would require validated historical
+        traffic and accident data, privacy safeguards,
+        model monitoring and human oversight.
         """
     )
 
@@ -918,11 +772,12 @@ elif page == "🚀 Future Scope":
 
     st.success(
         """
-        The long-term objective is not simply to predict accidents,
-        but to use data-driven signals to support safer roads,
-        better planning and faster preventive action.
+        The objective is to predict traffic risk scores
+        and use data-driven signals to support safer roads,
+        better planning and preventive action.
         """
     )
+
 
 # ============================================================
 # FOOTER
@@ -935,7 +790,7 @@ st.markdown(
     <div style="text-align:center;color:#64748b;">
     <b>SafeRoad AI</b> • Traffic Accident Risk Prediction
     <br>
-    Data Thinking + Machine Learning + Social Impact
+    Regression + Machine Learning + Social Impact
     </div>
     """,
     unsafe_allow_html=True
